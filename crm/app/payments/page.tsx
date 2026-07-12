@@ -6,6 +6,8 @@ import { ENDPOINTS } from "@/lib/endpoints";
 import PageHeader from "@/components/ui/PageHeader";
 import DataTable from "@/components/ui/DataTable";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import PaymentForm from "@/components/forms/PaymentForm";
+
 
 export default function PaymentsPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -94,6 +96,13 @@ export default function PaymentsPage() {
             : "Review your personal invoice history and tuition balances."
         }
       />
+      {role === "admin" && (
+        <div className="mb-6">
+          <PaymentForm
+            onCreated={(p: any) => setItems((prev) => [p, ...(prev || [])])}
+          />
+        </div>
+      )}
       <DataTable columns={columns} data={rows} />
     </DashboardLayout>
   );

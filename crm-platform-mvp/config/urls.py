@@ -22,4 +22,5 @@ urlpatterns = [
     path('api/payments/', include('apps.payments.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
     path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('api/reports/', include('apps.reports.urls')),
 ]
