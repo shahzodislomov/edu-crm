@@ -19,6 +19,7 @@ export default function LoginForm() {
     setError("");
     setLoading(true);
     try {
+      localStorage.removeItem("user_profile");
       const { data } = await api.post<LoginResponse>(ENDPOINTS.auth.login, {
         username,
         password,

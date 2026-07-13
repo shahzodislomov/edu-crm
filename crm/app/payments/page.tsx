@@ -6,16 +6,31 @@ import { ENDPOINTS } from "@/lib/endpoints";
 import PageHeader from "@/components/ui/PageHeader";
 import DataTable from "@/components/ui/DataTable";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import PaymentForm from "@/components/forms/PaymentForm";
-
+import Modal from "@/components/ui/Modal";
 
 export default function PaymentsPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<string>("");
 
-  useEffect(() => {
-    // 1. Check cached role for instant routing determination
+  // Form Modal State
+  const [isOpen, setIsOpen] = useState(false);
+  const [student, setStudent] = useState("");
+  const [group, setGroup] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [status, setStatus] = useState("paid");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  // Relational options
+  const [studentsList, setStudentsList] = useState<any[]>([]);
+  const [groupsList, setGroupsList] = useState<any[]>([]);
+
+  const fetchPayments = () => {
+    setLoading(true);
+    // fresh load
     const cached = typeof window !== "undefined" ? localStorage.getItem("user_profile") : null;
     let cachedRole = "";
     if (cached) {
@@ -31,33 +46,71 @@ export default function PaymentsPage() {
       return;
     }
 
-    // 2. Fetch fresh user role and load correct listings
-    api
-      .get(ENDPOINTS.auth.me)
-      .then((res) => {
-        const freshUser = res.data;
-        setRole(freshUser.role);
-        localStorage.setItem("user_profile", JSON.stringify(freshUser));
+    if (cachedRole === "admin") {
+      api.get(ENDPOINTS.payments.list)
+        .then((res) => {
+          setItems(res.data.results || res.data || []);
+          setLoading(false);
+        })
+        .catch(console.error);
+    } else if (cachedRole === "student") {
+      api.get("/payments/my/")
+        .then((res) => {
+          setItems(res.data.results || res.data || []);
+          setLoading(false);
+        })
+        .catch(console.error);
+    }
+  };
 
-        if (freshUser.role === "admin") {
-          return api.get(ENDPOINTS.payments.list);
-        } else if (freshUser.role === "student") {
-          return api.get("/payments/my/");
-        }
-        return null;
-      })
-      .then((paymentsRes) => {
-        if (paymentsRes) {
-          const results = paymentsRes.data.results || paymentsRes.data || [];
-          setItems(results);
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Payments data fetch error:", err);
-        setLoading(false);
-      });
+  useEffect(() => {
+    fetchPayments();
   }, []);
+
+  // Fetch relational data when modal opens
+  useEffect(() => {
+    if (isOpen && role === "admin") {
+      api.get(ENDPOINTS.students.list).then((res) => {
+        setStudentsList(res.data.results || res.data || []);
+      }).catch(console.error);
+
+      api.get(ENDPOINTS.groups.list).then((res) => {
+        setGroupsList(res.data.results || res.data || []);
+      }).catch(console.error);
+    }
+  }, [isOpen, role]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      await api.post(ENDPOINTS.payments.list, {
+        student: parseInt(student),
+        group: parseInt(group),
+        amount: parseFloat(amount),
+        payment_date: paymentDate,
+        status,
+        note: note || undefined,
+      });
+
+      // Clear Form
+      setStudent("");
+      setGroup("");
+      setAmount("");
+      setPaymentDate("");
+      setStatus("paid");
+      setNote("");
+      setIsOpen(false);
+      fetchPayments();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail || "Failed to register payment. Check inputs.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -77,6 +130,7 @@ export default function PaymentsPage() {
     { key: "payment_date", label: "Date" },
   ];
 
+  // Map rows
   const rows = items.map((p) => ({
     id: p.id,
     student_name: p.student_name || p.student?.user?.username || "-",
@@ -95,15 +149,143 @@ export default function PaymentsPage() {
             ? "Track tuition payments, collected fees, and active accounts."
             : "Review your personal invoice history and tuition balances."
         }
-      />
-      {role === "admin" && (
-        <div className="mb-6">
-          <PaymentForm
-            onCreated={(p: any) => setItems((prev) => [p, ...(prev || [])])}
-          />
-        </div>
-      )}
+      >
+        {role === "admin" && (
+          <button
+            onClick={() => setIsOpen(true)}
+            className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
+          >
+            + Register Payment
+          </button>
+        )}
+      </PageHeader>
       <DataTable columns={columns} data={rows} />
+
+      {/* Creation Modal */}
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Register Student Payment">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Select Student
+            </label>
+            <select
+              value={student}
+              onChange={(e) => setStudent(e.target.value)}
+              className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+              required
+            >
+              <option value="" className="text-slate-800 dark:text-white bg-background">Select a student</option>
+              {studentsList.map((s) => (
+                <option key={s.id} value={s.id} className="text-slate-800 dark:text-white bg-background">
+                  {s.user?.first_name ? `${s.user.first_name} ${s.user.last_name}` : s.user?.username}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Study Group
+              </label>
+              <select
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              >
+                <option value="" className="text-slate-800 dark:text-white bg-background">Select a group</option>
+                {groupsList.map((g) => (
+                  <option key={g.id} value={g.id} className="text-slate-800 dark:text-white bg-background">
+                    {g.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Amount (USD)
+              </label>
+              <input
+                type="number"
+                placeholder="150"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Payment Date
+              </label>
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Payment Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              >
+                <option value="paid" className="text-slate-800 dark:text-white bg-background">Paid</option>
+                <option value="pending" className="text-slate-800 dark:text-white bg-background">Pending</option>
+                <option value="overdue" className="text-slate-800 dark:text-white bg-background">Overdue</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Note (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Paid in cash, bank transfer receipt..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200/50 dark:border-slate-800/50">
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? "Registering..." : "Register Payment"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </DashboardLayout>
   );
 }

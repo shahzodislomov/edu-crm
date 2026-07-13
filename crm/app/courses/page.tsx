@@ -6,13 +6,24 @@ import { ENDPOINTS } from "@/lib/endpoints";
 import PageHeader from "@/components/ui/PageHeader";
 import DataTable from "@/components/ui/DataTable";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import Modal from "@/components/ui/Modal";
 import type { Course } from "@/types";
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string>("");
+  const [isOpen, setIsOpen] = useState(false);
 
-  useEffect(() => {
+  // Form State
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [duration, setDuration] = useState("");
+  const [price, setPrice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchCourses = () => {
     setLoading(true);
     api
       .get(ENDPOINTS.courses.list)
@@ -25,7 +36,43 @@ export default function CoursesPage() {
       .finally(() => {
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchCourses();
+    api.get(ENDPOINTS.auth.me)
+      .then((res) => {
+        setUserRole(res.data.role);
+      })
+      .catch(console.error);
   }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      await api.post(ENDPOINTS.courses.list, {
+        name,
+        description,
+        duration_months: parseInt(duration),
+        price: parseFloat(price),
+      });
+      // Clear form
+      setName("");
+      setDescription("");
+      setDuration("");
+      setPrice("");
+      setIsOpen(false);
+      fetchCourses();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail || "Failed to create course. Please verify inputs.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const columns = [
     { key: "id", label: "ID" },
@@ -37,7 +84,17 @@ export default function CoursesPage() {
 
   return (
     <DashboardLayout>
-      <PageHeader title="Courses" subtitle="View and manage education curriculum offerings and course lists." />
+      <PageHeader title="Courses" subtitle="View and manage education curriculum offerings and course lists.">
+        {userRole === "admin" && (
+          <button
+            onClick={() => setIsOpen(true)}
+            className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
+          >
+            + Add Course
+          </button>
+        )}
+      </PageHeader>
+
       {loading ? (
         <div className="h-64 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-card p-6 animate-pulse flex items-center justify-center text-slate-400">
           Loading courses...
@@ -45,6 +102,93 @@ export default function CoursesPage() {
       ) : (
         <DataTable columns={columns} data={courses} />
       )}
+
+      {/* Creation Modal */}
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Create New Course">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Course Name
+            </label>
+            <input
+              type="text"
+              placeholder="Fullstack JavaScript Developer"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Description
+            </label>
+            <textarea
+              placeholder="Provide a brief course description..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm h-24 resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Duration (Months)
+              </label>
+              <input
+                type="number"
+                placeholder="6"
+                min="1"
+                max="36"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                Price (USD)
+              </label>
+              <input
+                type="number"
+                placeholder="200"
+                min="0"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
+                required
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-200/50 dark:border-slate-800/50">
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? "Creating..." : "Create Course"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </DashboardLayout>
   );
 }
