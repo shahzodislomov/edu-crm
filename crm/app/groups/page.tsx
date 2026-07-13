@@ -15,6 +15,9 @@ export default function GroupsPage() {
 
   // Form Modal State
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
   const [name, setName] = useState("");
   const [course, setCourse] = useState("");
   const [teacher, setTeacher] = useState("");
@@ -54,7 +57,8 @@ export default function GroupsPage() {
 
   // Fetch relational data when modal opens
   useEffect(() => {
-    if (isOpen && userRole === "admin") {
+    const isAllowed = userRole === "admin";
+    if (isOpen && isAllowed) {
       api.get(ENDPOINTS.courses.list).then((res) => {
         setCoursesList(res.data.results || res.data || []);
       }).catch(console.error);
@@ -65,33 +69,70 @@ export default function GroupsPage() {
     }
   }, [isOpen, userRole]);
 
+  const handleOpenCreate = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setName("");
+    setCourse("");
+    setTeacher("");
+    setStartDate("");
+    setEndDate("");
+    setStatus("pending");
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleOpenEdit = (groupObj: any) => {
+    setIsEditMode(true);
+    setEditingId(groupObj.id);
+    setName(groupObj.name || "");
+    setCourse(String(groupObj.course?.id || groupObj.course || ""));
+    setTeacher(String(groupObj.teacher?.id || groupObj.teacher || ""));
+    setStartDate(groupObj.start_date || "");
+    setEndDate(groupObj.end_date || "");
+    setStatus(groupObj.status || "pending");
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleDelete = async (groupObj: any) => {
+    if (!window.confirm(`Are you sure you want to delete group "${groupObj.name}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`${ENDPOINTS.groups.list}${groupObj.id}/`);
+      fetchGroups();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to delete study group.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
-    try {
-      await api.post(ENDPOINTS.groups.list, {
-        name,
-        course: parseInt(course),
-        teacher: parseInt(teacher),
-        start_date: startDate,
-        end_date: endDate || undefined,
-        status,
-      });
+    const payload = {
+      name,
+      course: parseInt(course),
+      teacher: parseInt(teacher),
+      start_date: startDate,
+      end_date: endDate || null,
+      status,
+    };
 
-      // Clear Form
-      setName("");
-      setCourse("");
-      setTeacher("");
-      setStartDate("");
-      setEndDate("");
-      setStatus("pending");
+    try {
+      if (isEditMode && editingId) {
+        await api.put(`${ENDPOINTS.groups.list}${editingId}/`, payload);
+      } else {
+        await api.post(ENDPOINTS.groups.list, payload);
+      }
       setIsOpen(false);
       fetchGroups();
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || "Failed to create group. Check inputs.");
+      setError(err.response?.data?.detail || "Failed to save group details. Check fields.");
     } finally {
       setSubmitting(false);
     }
@@ -111,14 +152,21 @@ export default function GroupsPage() {
     course_name: g.course_name || g.course?.name || "-",
     teacher_name: g.teacher_name || (g.teacher?.user?.first_name ? `${g.teacher.user.first_name} ${g.teacher.user.last_name}` : g.teacher?.user?.username) || "-",
     status: g.status,
+    // Keep course and teacher object IDs for pre-population in edit handler
+    course: g.course,
+    teacher: g.teacher,
+    start_date: g.start_date,
+    end_date: g.end_date,
   }));
+
+  const isAdmin = userRole === "admin";
 
   return (
     <DashboardLayout>
       <PageHeader title="Groups" subtitle="Monitor active classes, student divisions, and study schedules.">
-        {userRole === "admin" && (
+        {isAdmin && (
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
           >
             + Add Group
@@ -129,11 +177,16 @@ export default function GroupsPage() {
       {loading ? (
         <div className="h-64 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-card p-6 animate-pulse flex items-center justify-center text-slate-400" />
       ) : (
-        <DataTable columns={columns} data={rows} />
+        <DataTable
+          columns={columns}
+          data={rows}
+          onEdit={isAdmin ? handleOpenEdit : undefined}
+          onDelete={isAdmin ? handleDelete : undefined}
+        />
       )}
 
       {/* Creation Modal */}
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Create New Study Group">
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={isEditMode ? "Edit Study Group" : "Create New Study Group"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
@@ -251,7 +304,7 @@ export default function GroupsPage() {
               disabled={submitting}
               className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Creating..." : "Create Group"}
+              {submitting ? "Saving..." : isEditMode ? "Save Changes" : "Create Group"}
             </button>
           </div>
         </form>

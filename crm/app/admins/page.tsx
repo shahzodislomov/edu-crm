@@ -2,21 +2,19 @@
 
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { ENDPOINTS } from "@/lib/endpoints";
 import PageHeader from "@/components/ui/PageHeader";
 import DataTable from "@/components/ui/DataTable";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Modal from "@/components/ui/Modal";
 
-export default function StudentsPage() {
-  const [students, setStudents] = useState<any[]>([]);
+export default function AdminsPage() {
+  const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form Modal State
+  // Form State
   const [isOpen, setIsOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingUserId, setEditingUserId] = useState<number | null>(null);
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -24,75 +22,65 @@ export default function StudentsPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
-  const [birthDate, setBirthDate] = useState("");
-  const [address, setAddress] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchStudents = () => {
+  const fetchAdmins = () => {
     setLoading(true);
     api
-      .get(ENDPOINTS.students.list)
+      .get("/auth/users/")
       .then((res) => {
-        setStudents(res.data.results || res.data || []);
+        // Filter users that are admins
+        const allUsers = res.data.results || res.data || [];
+        const adminUsers = allUsers.filter((u: any) => u.role === "admin");
+        setAdmins(adminUsers);
       })
-      .catch((err) => {
-        console.error("Students list loading error:", err);
-      })
+      .catch(console.error)
       .finally(() => {
         setLoading(false);
       });
   };
 
   useEffect(() => {
-    fetchStudents();
+    fetchAdmins();
   }, []);
 
   const handleOpenCreate = () => {
     setIsEditMode(false);
     setEditingId(null);
-    setEditingUserId(null);
     setUsername("");
     setEmail("");
     setPassword("");
     setFirstName("");
     setLastName("");
     setPhone("");
-    setBirthDate("");
-    setAddress("");
     setError("");
     setIsOpen(true);
   };
 
-  const handleOpenEdit = (student: any) => {
+  const handleOpenEdit = (admin: any) => {
     setIsEditMode(true);
-    setEditingId(student.id);
-    setEditingUserId(student.user?.id || null);
-    setUsername(student.user?.username || "");
-    setEmail(student.user?.email || "");
-    setPassword(""); // Leave blank unless resetting
-    setFirstName(student.user?.first_name || "");
-    setLastName(student.user?.last_name || "");
-    setPhone(student.user?.phone || "");
-    setBirthDate(student.birth_date || "");
-    setAddress(student.address || "");
+    setEditingId(admin.id);
+    setUsername(admin.username || "");
+    setEmail(admin.email || "");
+    setPassword(""); // Leave blank unless changing
+    setFirstName(admin.first_name || "");
+    setLastName(admin.last_name || "");
+    setPhone(admin.phone || "");
     setError("");
     setIsOpen(true);
   };
 
-  const handleDelete = async (student: any) => {
-    if (!student.user?.id) return;
-    if (!window.confirm(`Are you sure you want to remove student "${student.user.username}"?`)) {
+  const handleDelete = async (admin: any) => {
+    if (!window.confirm(`Are you sure you want to remove administrator "${admin.username}"?`)) {
       return;
     }
-
     try {
-      // Deleting the core user cascades to student profile removal
-      await api.delete(`/auth/users/${student.user.id}/`);
-      fetchStudents();
+      await api.delete(`/auth/users/${admin.id}/`);
+      fetchAdmins();
     } catch (err: any) {
       console.error(err);
-      alert(err.response?.data?.detail || "Failed to delete student.");
+      alert(err.response?.data?.detail || "Failed to delete administrator.");
     }
   };
 
@@ -101,51 +89,35 @@ export default function StudentsPage() {
     setError("");
     setSubmitting(true);
 
-    try {
-      if (isEditMode && editingId && editingUserId) {
-        // 1. Update Core User Details
-        const userPayload: any = {
-          username,
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone || undefined,
-          role: "student",
-        };
-        if (password) {
-          userPayload.password = password;
-        }
-        await api.put(`/auth/users/${editingUserId}/`, userPayload);
+    const payload: any = {
+      username,
+      email,
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone || undefined,
+      role: "admin",
+    };
 
-        // 2. Update Student Profile Details
-        await api.patch(`${ENDPOINTS.students.list}${editingId}/`, {
-          birth_date: birthDate || undefined,
-          address: address || undefined,
-        });
+    if (password) {
+      payload.password = password;
+    }
+
+    try {
+      if (isEditMode && editingId) {
+        await api.put(`/auth/users/${editingId}/`, payload);
       } else {
         if (!password) {
-          setError("Password is required for new student accounts.");
+          setError("Password is required for new administrators.");
           setSubmitting(false);
           return;
         }
-        // Create student via POST
-        await api.post(ENDPOINTS.students.list, {
-          username,
-          email,
-          password,
-          first_name: firstName,
-          last_name: lastName,
-          phone: phone || undefined,
-          birth_date: birthDate || undefined,
-          address: address || undefined,
-        });
+        await api.post("/auth/users/", payload);
       }
-
       setIsOpen(false);
-      fetchStudents();
+      fetchAdmins();
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || "Failed to save student details. Check fields.");
+      setError(err.response?.data?.detail || "Failed to save administrator profile.");
     } finally {
       setSubmitting(false);
     }
@@ -153,39 +125,31 @@ export default function StudentsPage() {
 
   const columns = [
     { key: "id", label: "ID" },
-    { key: "user", label: "Username" },
-    { key: "enrolled_at", label: "Enrolled" },
+    { key: "username", label: "Username" },
+    { key: "email", label: "Email" },
+    { key: "first_name", label: "First Name" },
+    { key: "last_name", label: "Last Name" },
   ];
-
-  const dataForTable = students.map((s) => ({
-    ...s,
-    user: s.user?.username || "-",
-  }));
 
   return (
     <DashboardLayout allowedRoles={["admin"]}>
-      <PageHeader title="Students" subtitle="Manage registered student profiles and enrollment records.">
+      <PageHeader title="Administrators" subtitle="Manage core system administrators and access clearance.">
         <button
           onClick={handleOpenCreate}
           className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
         >
-          + Add Student
+          + Add Admin
         </button>
       </PageHeader>
 
       {loading ? (
-        <div className="h-64 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-card p-6 animate-pulse" />
+        <div className="h-64 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-card p-6 animate-pulse flex items-center justify-center text-slate-400" />
       ) : (
-        <DataTable
-          columns={columns}
-          data={dataForTable}
-          onEdit={handleOpenEdit}
-          onDelete={handleDelete}
-        />
+        <DataTable columns={columns} data={admins} onEdit={handleOpenEdit} onDelete={handleDelete} />
       )}
 
-      {/* Creation Modal */}
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={isEditMode ? "Edit Student Profile" : "Add New Student"}>
+      {/* Creation/Edit Modal */}
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={isEditMode ? "Edit Administrator" : "Add New Administrator"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -194,7 +158,7 @@ export default function StudentsPage() {
               </label>
               <input
                 type="text"
-                placeholder="student_username"
+                placeholder="admin_user"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
@@ -224,7 +188,7 @@ export default function StudentsPage() {
               </label>
               <input
                 type="text"
-                placeholder="Ali"
+                placeholder="Temur"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
@@ -237,7 +201,7 @@ export default function StudentsPage() {
               </label>
               <input
                 type="text"
-                placeholder="Valiyev"
+                placeholder="Aliev"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
@@ -251,7 +215,7 @@ export default function StudentsPage() {
             </label>
             <input
               type="email"
-              placeholder="student@educrm.uz"
+              placeholder="admin@educrm.uz"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
@@ -259,42 +223,15 @@ export default function StudentsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                Birth Date
-              </label>
-              <input
-                type="date"
-                value={birthDate}
-                onChange={(e) => setBirthDate(e.target.value)}
-                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-                Phone Number
-              </label>
-              <input
-                type="text"
-                placeholder="+998901234567"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
-              />
-            </div>
-          </div>
-
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
-              Address
+              Phone Number
             </label>
             <input
               type="text"
-              placeholder="Tashkent city, Chilanzar district"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              placeholder="+998901234567"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               className="block w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white/5 px-4 py-2.5 text-foreground placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all text-sm"
             />
           </div>
@@ -318,7 +255,7 @@ export default function StudentsPage() {
               disabled={submitting}
               className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Saving..." : isEditMode ? "Save Changes" : "Add Student"}
+              {submitting ? "Saving..." : isEditMode ? "Save Changes" : "Create Admin"}
             </button>
           </div>
         </form>

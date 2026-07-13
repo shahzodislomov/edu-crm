@@ -15,6 +15,9 @@ export default function AssignmentsPage() {
 
   // Form Modal State
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [group, setGroup] = useState("");
@@ -59,31 +62,74 @@ export default function AssignmentsPage() {
     }
   }, [isOpen, userRole]);
 
+  const handleOpenCreate = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setTitle("");
+    setDescription("");
+    setGroup("");
+    setTeacher("");
+    setDueDate("");
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleOpenEdit = (assignment: any) => {
+    setIsEditMode(true);
+    setEditingId(assignment.id);
+    setTitle(assignment.title || "");
+    setDescription(assignment.description || "");
+    setGroup(String(assignment.group?.id || assignment.group || ""));
+    setTeacher(String(assignment.teacher?.id || assignment.teacher || ""));
+    
+    // Format date field safely
+    let formattedDate = "";
+    if (assignment.due_date) {
+      formattedDate = assignment.due_date.split("T")[0];
+    }
+    setDueDate(formattedDate);
+    
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleDelete = async (assignment: any) => {
+    if (!window.confirm(`Are you sure you want to delete assignment "${assignment.title}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`${ENDPOINTS.assignments.list}${assignment.id}/`);
+      fetchAssignments();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to delete assignment.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
-    try {
-      await api.post(ENDPOINTS.assignments.list, {
-        group: parseInt(group),
-        teacher: parseInt(teacher),
-        title,
-        description: description || undefined,
-        due_date: dueDate,
-      });
+    const payload = {
+      group: parseInt(group),
+      teacher: parseInt(teacher),
+      title,
+      description: description || null,
+      due_date: dueDate,
+    };
 
-      // Clear Form
-      setTitle("");
-      setDescription("");
-      setGroup("");
-      setTeacher("");
-      setDueDate("");
+    try {
+      if (isEditMode && editingId) {
+        await api.put(`${ENDPOINTS.assignments.list}${editingId}/`, payload);
+      } else {
+        await api.post(ENDPOINTS.assignments.list, payload);
+      }
       setIsOpen(false);
       fetchAssignments();
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || "Failed to create assignment. Check inputs.");
+      setError(err.response?.data?.detail || "Failed to save assignment. Check fields.");
     } finally {
       setSubmitting(false);
     }
@@ -103,6 +149,10 @@ export default function AssignmentsPage() {
     teacher_name: a.teacher_name || (a.teacher?.user?.first_name ? `${a.teacher.user.first_name} ${a.teacher.user.last_name}` : a.teacher?.user?.username) || "-",
     title: a.title,
     due_date: a.due_date,
+    // Store original details for edit mode pre-population
+    group: a.group,
+    teacher: a.teacher,
+    description: a.description,
   }));
 
   const isStaff = userRole === "admin" || userRole === "teacher";
@@ -112,7 +162,7 @@ export default function AssignmentsPage() {
       <PageHeader title="Assignments" subtitle="Track homework, coursework assignments, and test schedules.">
         {isStaff && (
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
           >
             + Add Assignment
@@ -123,11 +173,16 @@ export default function AssignmentsPage() {
       {loading ? (
         <div className="h-64 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-card p-6 animate-pulse flex items-center justify-center text-slate-400" />
       ) : (
-        <DataTable columns={columns} data={rows} />
+        <DataTable
+          columns={columns}
+          data={rows}
+          onEdit={isStaff ? handleOpenEdit : undefined}
+          onDelete={isStaff ? handleDelete : undefined}
+        />
       )}
 
       {/* Creation Modal */}
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Create New Assignment">
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={isEditMode ? "Edit Assignment" : "Create New Assignment"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
@@ -227,7 +282,7 @@ export default function AssignmentsPage() {
               disabled={submitting}
               className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Creating..." : "Create Assignment"}
+              {submitting ? "Saving..." : isEditMode ? "Save Changes" : "Create Assignment"}
             </button>
           </div>
         </form>

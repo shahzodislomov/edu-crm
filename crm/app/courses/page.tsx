@@ -13,7 +13,11 @@ export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
+
+  // Modal Mode State
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   // Form State
   const [name, setName] = useState("");
@@ -47,28 +51,64 @@ export default function CoursesPage() {
       .catch(console.error);
   }, []);
 
+  const handleOpenCreate = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setName("");
+    setDescription("");
+    setDuration("");
+    setPrice("");
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleOpenEdit = (course: Course) => {
+    setIsEditMode(true);
+    setEditingId(course.id);
+    setName(course.name || "");
+    setDescription(course.description || "");
+    setDuration(String(course.duration_months || ""));
+    setPrice(String(course.price || ""));
+    setError("");
+    setIsOpen(true);
+  };
+
+  const handleDelete = async (course: Course) => {
+    if (!window.confirm(`Are you sure you want to delete course "${course.name}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`${ENDPOINTS.courses.list}${course.id}/`);
+      fetchCourses();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.detail || "Failed to delete course.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
+    const payload = {
+      name,
+      description,
+      duration_months: parseInt(duration),
+      price: parseFloat(price),
+    };
+
     try {
-      await api.post(ENDPOINTS.courses.list, {
-        name,
-        description,
-        duration_months: parseInt(duration),
-        price: parseFloat(price),
-      });
-      // Clear form
-      setName("");
-      setDescription("");
-      setDuration("");
-      setPrice("");
+      if (isEditMode && editingId) {
+        await api.put(`${ENDPOINTS.courses.list}${editingId}/`, payload);
+      } else {
+        await api.post(ENDPOINTS.courses.list, payload);
+      }
       setIsOpen(false);
       fetchCourses();
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || "Failed to create course. Please verify inputs.");
+      setError(err.response?.data?.detail || "Failed to save course. Check fields.");
     } finally {
       setSubmitting(false);
     }
@@ -82,12 +122,14 @@ export default function CoursesPage() {
     { key: "price", label: "Price" },
   ];
 
+  const isAdmin = userRole === "admin";
+
   return (
     <DashboardLayout>
       <PageHeader title="Courses" subtitle="View and manage education curriculum offerings and course lists.">
-        {userRole === "admin" && (
+        {isAdmin && (
           <button
-            onClick={() => setIsOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2.5 bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all cursor-pointer focus:outline-none"
           >
             + Add Course
@@ -100,11 +142,16 @@ export default function CoursesPage() {
           Loading courses...
         </div>
       ) : (
-        <DataTable columns={columns} data={courses} />
+        <DataTable
+          columns={columns}
+          data={courses}
+          onEdit={isAdmin ? handleOpenEdit : undefined}
+          onDelete={isAdmin ? handleDelete : undefined}
+        />
       )}
 
-      {/* Creation Modal */}
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Create New Course">
+      {/* Form Modal */}
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={isEditMode ? "Edit Course" : "Create New Course"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
@@ -184,7 +231,7 @@ export default function CoursesPage() {
               disabled={submitting}
               className="px-4 py-2 text-xs font-semibold rounded-xl bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-500/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "Creating..." : "Create Course"}
+              {submitting ? "Saving..." : isEditMode ? "Save Changes" : "Create Course"}
             </button>
           </div>
         </form>

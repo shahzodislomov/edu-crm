@@ -19,23 +19,14 @@ export default function DashboardLayout({ children, allowedRoles }: DashboardLay
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    // 1. Optimistic load of user profile for instant shell rendering
-    const cached = typeof window !== "undefined" ? localStorage.getItem("user_profile") : null;
-    if (cached) {
-      try {
-        setUser(JSON.parse(cached));
-      } catch (_) {}
-    }
-
-    // 2. Perform authoritative token check via backend API
+    // 1. Perform authoritative token check via backend API
     api
       .get(ENDPOINTS.auth.me)
       .then((res) => {
         const freshUser = res.data;
         setUser(freshUser);
-        localStorage.setItem("user_profile", JSON.stringify(freshUser));
         
-        // 3. Gate access using verified backend profile details
+        // 2. Gate access using verified backend profile details
         if (!allowedRoles || allowedRoles.includes(freshUser.role)) {
           setAuthorized(true);
         } else {
@@ -48,9 +39,8 @@ export default function DashboardLayout({ children, allowedRoles }: DashboardLay
         setAuthorized(false);
         setLoading(false);
         
-        // 4. Redirect on unauthorized token
+        // 3. Redirect on unauthorized token
         if (err.response?.status === 401) {
-          localStorage.removeItem("user_profile");
           if (typeof window !== "undefined") {
             window.location.href = "/login";
           }
